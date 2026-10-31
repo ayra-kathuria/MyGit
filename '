@@ -1,0 +1,7 @@
+#include <stdio.h>
+#include "mygit.h"
+
+int add_file(const char *filename) {
+    printf("Add module not implemented yet: %s\n", filename);
+    return 0;
+}
