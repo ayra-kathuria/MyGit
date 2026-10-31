@@ -5,13 +5,42 @@
 
 int init_repository(void) {
 
-    // Create main repository folder
-    if (mkdir(".mygit", 0777) == -1) {
-        if (errno == EEXIST) {
+    struct stat st;
+
+    // Check whether repository already exists
+    if (stat(".mygit", &st) == 0) {
+
+        if (!S_ISDIR(st.st_mode)) {
+            printf("Error: .mygit exists but is not a directory.\n");
+            return 1;
+        }
+
+        // Verify existing repository structure
+        if (stat(".mygit/staging", &st) == 0 &&
+            S_ISDIR(st.st_mode) &&
+            stat(".mygit/commits", &st) == 0 &&
+            S_ISDIR(st.st_mode) &&
+            stat(".mygit/HEAD", &st) == 0 &&
+            S_ISREG(st.st_mode) &&
+            stat(".mygit/staged_files.txt", &st) == 0 &&
+            S_ISREG(st.st_mode)) {
+
             printf("MyGit repository already exists.\n");
             return 0;
         }
 
+        printf("Error: Repository structure is incomplete.\n");
+        return 1;
+    }
+
+    // Handle errors other than repository not existing
+    if (errno != ENOENT) {
+        perror("Error checking repository");
+        return 1;
+    }
+
+    // Create main repository directory
+    if (mkdir(".mygit", 0777) == -1) {
         perror("Error creating repository");
         return 1;
     }
