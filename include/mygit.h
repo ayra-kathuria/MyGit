@@ -8,5 +8,5 @@ int show_log(void);
 int show_status(void);
 int checkout_version(const char *commit_id);
 void show_help(void);
-#endif
 
+#endif
