@@ -2,13 +2,27 @@
 #include <string.h>
 #include "mygit.h"
 
+void show_help(void) {
+    printf("\nMyGit - Lightweight Version Control System\n\n");
+
+    printf("Available Commands:\n");
+    printf("  mygit init                  Initialize repository\n");
+    printf("  mygit add <filename>        Stage a file\n");
+    printf("  mygit commit -m <message>   Commit changes\n");
+    printf("  mygit status                Show repository status\n");
+    printf("  mygit log                   Show commit history\n");
+    printf("  mygit checkout <commit-id>  Restore a version\n");
+    printf("  mygit help                  Display help\n\n");
+}
+
+
+
 int main(int argc, char *argv[]) {
 
-    if (argc < 2) {
-        printf("Usage: mygit <command>\n");
-        return 1;
-    }
-
+if (argc < 2 || strcmp(argv[1], "help") == 0) {
+    show_help();
+    return 0;
+}
     if (strcmp(argv[1], "init") == 0) {
         return init_repository();
     }
