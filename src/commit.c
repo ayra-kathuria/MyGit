@@ -1,4 +1,3 @@
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,26 +28,30 @@ static int copy_file(const char *src_path, const char *dest_path) {
 
     char buffer[4096];
     size_t bytes;
+    int result = 0;
 
     while ((bytes = fread(buffer, 1, sizeof(buffer), src)) > 0) {
         if (fwrite(buffer, 1, bytes, dest) != bytes) {
             perror("Error writing file");
-            fclose(src);
-            fclose(dest);
-            return 1;
+            result = 1;
+            break;
         }
     }
 
     if (ferror(src)) {
         perror("Error reading file");
-        fclose(src);
-        fclose(dest);
-        return 1;
+        result = 1;
     }
 
-    fclose(src);
-    fclose(dest);
-    return 0;
+    if (fclose(src) != 0) {
+        result = 1;
+    }
+
+    if (fclose(dest) != 0) {
+        result = 1;
+    }
+
+    return result;
 }
 
 /* Copy all regular files from one snapshot to another */
@@ -71,15 +74,21 @@ static int copy_snapshot(const char *src_dir, const char *dest_dir) {
             continue;
         }
 
-        if (snprintf(src_path, sizeof(src_path), "%s/%s",
-                     src_dir, entry->d_name) >= (int)sizeof(src_path) ||
-            snprintf(dest_path, sizeof(dest_path), "%s/%s",
-                     dest_dir, entry->d_name) >= (int)sizeof(dest_path)) {
+        int src_len = snprintf(src_path, sizeof(src_path),
+                               "%s/%s", src_dir, entry->d_name);
+
+        int dest_len = snprintf(dest_path, sizeof(dest_path),
+                                "%s/%s", dest_dir, entry->d_name);
+
+        if (src_len < 0 || (size_t)src_len >= sizeof(src_path) ||
+            dest_len < 0 || (size_t)dest_len >= sizeof(dest_path)) {
+            fprintf(stderr, "Error: Snapshot path is too long.\n");
             closedir(dir);
             return 1;
         }
 
         if (stat(src_path, &st) != 0) {
+            perror("Error checking snapshot file");
             closedir(dir);
             return 1;
         }
@@ -114,6 +123,7 @@ static int generate_commit_id(char *commit_id, size_t size) {
 
         if (sscanf(entry->d_name, "C%d%c", &number, &extra) == 1) {
             char expected[32];
+
             snprintf(expected, sizeof(expected), "C%03d", number);
 
             if (number > highest &&
@@ -125,7 +135,10 @@ static int generate_commit_id(char *commit_id, size_t size) {
 
     closedir(dir);
 
-    if (snprintf(commit_id, size, "C%03d", highest + 1) >= size) {
+    int written = snprintf(commit_id, size, "C%03d", highest + 1);
+
+    if (written < 0 || (size_t)written >= size) {
+        fprintf(stderr, "Error generating commit ID.\n");
         return 1;
     }
 
@@ -183,10 +196,15 @@ static int apply_staged_files(const char *snapshot_dir) {
             return 1;
         }
 
-        if (snprintf(src_path, sizeof(src_path),
-                     ".mygit/staging/%s", filename) >= (int)sizeof(src_path) ||
-            snprintf(dest_path, sizeof(dest_path),
-                     "%s/%s", snapshot_dir, filename) >= sizeof(dest_path)) {
+        int src_len = snprintf(src_path, sizeof(src_path),
+                               ".mygit/staging/%s", filename);
+
+        int dest_len = snprintf(dest_path, sizeof(dest_path),
+                                "%s/%s", snapshot_dir, filename);
+
+        if (src_len < 0 || (size_t)src_len >= sizeof(src_path) ||
+            dest_len < 0 || (size_t)dest_len >= sizeof(dest_path)) {
+            fprintf(stderr, "Error: File path is too long.\n");
             fclose(fp);
             return 1;
         }
@@ -212,8 +230,11 @@ static int save_metadata(const char *commit_dir,
                          const char *message) {
     char path[PATH_MAX];
 
-    if (snprintf(path, sizeof(path), "%s/metadata.txt",
-                 commit_dir) >= sizeof(path)) {
+    int written = snprintf(path, sizeof(path),
+                           "%s/metadata.txt", commit_dir);
+
+    if (written < 0 || (size_t)written >= sizeof(path)) {
+        fprintf(stderr, "Error: Metadata path is too long.\n");
         return 1;
     }
 
@@ -277,8 +298,11 @@ static int clear_staging(void) {
             return 1;
         }
 
-        if (snprintf(path, sizeof(path),
-                     ".mygit/staging/%s", filename) >= sizeof(path)) {
+        int written = snprintf(path, sizeof(path),
+                               ".mygit/staging/%s", filename);
+
+        if (written < 0 || (size_t)written >= sizeof(path)) {
+            fprintf(stderr, "Error: Staging path is too long.\n");
             fclose(fp);
             return 1;
         }
@@ -306,6 +330,7 @@ static int clear_staging(void) {
 /* Main commit function */
 int commit_changes(const char *message) {
     struct stat st;
+
     char commit_id[32];
     char commit_dir[PATH_MAX];
     char snapshot_dir[PATH_MAX];
@@ -337,11 +362,22 @@ int commit_changes(const char *message) {
         return 1;
     }
 
-    snprintf(commit_dir, sizeof(commit_dir),
-             ".mygit/commits/%s", commit_id);
+    int commit_len = snprintf(commit_dir, sizeof(commit_dir),
+                              ".mygit/commits/%s", commit_id);
 
-    snprintf(snapshot_dir, sizeof(snapshot_dir),
-             "%s/snapshot", commit_dir);
+    if (commit_len < 0 || (size_t)commit_len >= sizeof(commit_dir)) {
+        fprintf(stderr, "Error: Commit path is too long.\n");
+        return 1;
+    }
+
+    int snapshot_len = snprintf(snapshot_dir, sizeof(snapshot_dir),
+                                "%s/snapshot", commit_dir);
+
+    if (snapshot_len < 0 ||
+        (size_t)snapshot_len >= sizeof(snapshot_dir)) {
+        fprintf(stderr, "Error: Snapshot path is too long.\n");
+        return 1;
+    }
 
     /* 5. Create commit directory */
     if (mkdir(commit_dir, 0777) != 0) {
@@ -372,8 +408,16 @@ int commit_changes(const char *message) {
 
     /* 7. Copy previous complete snapshot */
     if (strcmp(previous_id, "NONE") != 0) {
-        snprintf(previous_snapshot, sizeof(previous_snapshot),
-                 ".mygit/commits/%s/snapshot", previous_id);
+        int previous_len = snprintf(previous_snapshot,
+                                    sizeof(previous_snapshot),
+                                    ".mygit/commits/%s/snapshot",
+                                    previous_id);
+
+        if (previous_len < 0 ||
+            (size_t)previous_len >= sizeof(previous_snapshot)) {
+            fprintf(stderr, "Error: Previous snapshot path is too long.\n");
+            return 1;
+        }
 
         if (copy_snapshot(previous_snapshot, snapshot_dir) != 0) {
             return 1;
